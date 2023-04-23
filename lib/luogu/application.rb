@@ -18,6 +18,8 @@ module Luogu
     end
 
     setting :run_agent_retries, default: ENV.fetch('RUN_AGENT_RETRIES', 5).to_i
+    setting :run_agent_model, default: AgentModel::AGENT
+    setting :run_agent_global, default: nil
 
     setting :logger, reader: true,
             default: ENV.fetch('LOG_LEVEL', Logger::INFO),

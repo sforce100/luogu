@@ -1,7 +1,10 @@
 # frozen_string_literal: true
 
 module Luogu
-  class AgentRunner < Base
+  class AgentRunner 
+    setting :model, default: Application.config.run_agent_model
+    setting :global_agent, default: Application.config.run_agent_global
+
     setting :templates do
       setting :system, default: PromptTemplate.load_template('agent_system.md.erb')
       setting :user, default: PromptTemplate.load_template('agent_input.md.erb')
@@ -47,7 +50,8 @@ module Luogu
       self
     end
 
-    def run(text)
+    def run(text, &block)
+      OpenAI.add_plugin(&block) if block.present?
       @last_user_input = text
       messages = create_messages(
         [{role: "user", content: templates.user.result(binding)}]
@@ -77,6 +81,8 @@ module Luogu
         answer
       elsif content.is_a?(Array)
         run_agents(content, messages, run_agent_retries: run_agent_retries)
+      else
+        logger.info "unformat answer: #{content}"
       end
     end
 
@@ -98,18 +104,31 @@ module Luogu
         return
       end
       @tools_response = []
+      response = nil
       agents.each do |agent|
         agent_class = Module.const_get(agent['action'])
         logger.info "#{run_agent_retries} running #{agent_class} input: #{agent['action_input']}"
         response = agent_class.new.call(agent['action_input'])
         @tools_response << {name: agent['action'], response: response}
       end
-      messages = _messages_ + [
-        { role: "assistant", content: agents.to_json },
-        { role: "user", content: templates.tool.result(binding) }
-      ]
-      request messages, run_agent_retries: run_agent_retries
+      if model == AgentModel::SIMPLE
+        simple_runner(response)
+      else
+        messages = _messages_ + [
+          { role: "assistant", content: agents.to_json },
+          { role: "user", content: templates.tool.result(binding) }
+        ]
+        request messages, run_agent_retries: run_agent_retries
+      end
     end
 
+    def simple_runner(response)
+      if response.nil? && !global_agent.nil?
+        response = global_agent.new.call(@last_user_input)
+      end
+      
+      logger.info "final answer: #{response}"
+      return find_and_save_final_answer({action: 'Final Answer', action_input: response})  
+    end
   end
 end

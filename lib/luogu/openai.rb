@@ -16,7 +16,9 @@ module Luogu::OpenAI
     params ||= parameters
     retries_left = retries || Luogu::Application.config.openai.retries
     begin
-      client.post('/v1/chat/completions', json: params)
+      resp = client.post('/v1/chat/completions', json: params)
+      plugins_exec(params[:stream], resp)
+      return resp
     rescue HTTP::Error => e
       if retries_left > 0
         puts "retrying ..."
@@ -71,6 +73,51 @@ module Luogu::OpenAI
       end
     else
       nil
+    end
+  end
+
+  class << self
+    def add_plugin(&block)
+      if block.present?
+        @plugins << block
+      end
+    end
+
+    def plugins_exec(is_stream, resp)
+      if is_stream
+        tmp_response_chunk = ""
+        while (chunk = resp.readpartial)
+          tmp_response_chunk += chunk
+          parse_result = parse_chunk(tmp_response_chunk)
+          events = parse_result[0]
+          tmp_response_chunk = parse_result[1]
+          events.each do |resp_data|
+            resp_type = 'receive'
+            delta = ''
+            if resp_data.match?(/^\[DONE\]/)
+              resp_type = 'done'
+            else
+              data = JSON.parse(resp_data)
+              delta = data.dig('choices', 0, 'delta', 'content') || ''
+            end
+            @plugins.each do |plugin|
+              plugin.call(resp_type, delta)
+            end
+          end
+        end
+      else
+        @plugins.each do |plugin|
+          plugin.call('done', resp.body)
+        end
+      end
+    end
+
+    def parse_chunk(tmp_response_chunk)
+      return [[], tmp_response_chunk] unless tmp_response_chunk.end_with?("\n\n")
+
+      parse_data = tmp_response_chunk.split("\n\n")
+      events = parse_data.map { |t| t.gsub(/^data: /, '') }
+      [events, '']
     end
   end
 
