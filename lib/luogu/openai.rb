@@ -49,6 +49,25 @@ module Luogu::OpenAI
     else
       result_json
     end
+    rescue JSON::ParserError => e
+      result_json = fix_parse_json(markdown)
+      if result_json.nil? || result_json.none?
+        raise e
+      else
+        return result_json
+      end
+  end
+
+  def fix_parse_json(str)
+    puts "fix_parse_json: #{str}"
+    action_params = {}
+    regx = /"([^"]+)"\s*:\s*("[^"]+"|\d+)/
+    str.scan(regx).each do |regx_val|
+      key = regx_val[0].gsub("\"", "")
+      value = regx_val[1].gsub("\"", "")
+      action_params[key] = value
+    end
+    action_params
   end
 
   def chat_response_handle(response)
@@ -184,5 +203,5 @@ module Luogu::OpenAI
 
   end
 
-  module_function :chat, :client, :parse_json, :chat_response_handle, :find_final_answer, :get_content
+  module_function :chat, :client, :parse_json, :chat_response_handle, :find_final_answer, :get_content, :fix_parse_json
 end
