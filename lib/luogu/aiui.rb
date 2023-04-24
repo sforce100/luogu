@@ -4,7 +4,7 @@ module Luogu
   class AIUI < Base
     setting :id, default: Application.config.aiui.id
     setting :key, default: Application.config.aiui.key
-    setting :request_url, default: 'http://api.iflyos.cn/external/ls_log/aiui_request'
+    setting :request_url, default: Application.config.aiui.host
     setting :parse, default: ->(response) { response.parse.dig("data", 0, "intent", "answer") }
 
     class << self

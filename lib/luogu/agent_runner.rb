@@ -29,6 +29,7 @@ module Luogu
 
     attr_reader :request_params, :agents, :histories
     attr_accessor :is_tool_response, :last_user_input, :global_params
+    attr_accessor :openai_client, :final_answer_params
     def initialize(options={})
       @request_params = provider.parameter_model.call
       @request_params.stream = options[:stream].nil? ? false : options[:stream]
@@ -53,9 +54,8 @@ module Luogu
       self
     end
 
-    def run(text, &block)
+    def run(text)
       @is_tool_response = false
-      OpenAI.add_plugin(&block) if block_given?
       @last_user_input = text
       messages = create_messages(
         [{role: "user", content: templates.user.result(binding)}]
@@ -73,7 +73,7 @@ module Luogu
     def request(messages, run_agent_retries: 0)
       logger.debug "request chat: #{messages}"
       @request_params.messages = messages
-      response = provider.request.call(@request_params.to_h)
+      response = openai_client.present? ? openai_client.chat(params: @request_params.to_h) : provider.request.call(@request_params.to_h)
       unless response.code == 200
         logger.error response.body
         raise RequestError
@@ -88,13 +88,15 @@ module Luogu
       else
         logger.info "unformat answer: #{content}"
       end
+      rescue JSON::ParserError => e
+        logger.info "agent format json error: #{content}"
     end
 
     def find_and_save_final_answer(content)
-      if (answer = provider.find_final_answer.call(content))
+      if (@final_answer_params = provider.find_final_answer.call(content))
         @histories.enqueue({role: "user", content: @last_user_input})
-        @histories.enqueue({role: "assistant", content: answer})
-        answer
+        @histories.enqueue({role: "assistant", content: @final_answer_params['action_input']})
+        @final_answer_params['action_input']
       else
         nil
       end
@@ -132,7 +134,7 @@ module Luogu
       end
       
       logger.info "simple final answer: #{response}"
-      return find_and_save_final_answer({'action' => 'Final Answer', 'action_input' => response})  
+      return find_and_save_final_answer({'action' => 'Final Answer', 'action_input' => response})
     end
   end
 end

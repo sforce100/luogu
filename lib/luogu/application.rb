@@ -15,6 +15,7 @@ module Luogu
     setting :aiui do
       setting :id, default: ENV.fetch('AIUI_APP_ID')
       setting :key, default: ENV.fetch('AIUI_APP_KEY')
+      setting :host, default: ENV.fetch('AIUI_APP_HOST', 'http://api.iflyos.cn/external/ls_log/aiui_request')
     end
 
     setting :run_agent_retries, default: ENV.fetch('RUN_AGENT_RETRIES', 5).to_i

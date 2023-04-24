@@ -16,10 +16,7 @@ module Luogu::OpenAI
     params ||= parameters
     retries_left = retries || Luogu::Application.config.openai.retries
     begin
-      resp = client.post('/v1/chat/completions', json: params)
-      plugins_exec(params[:stream], resp)
-      puts resp.body.to_s
-      return resp
+      client.post('/v1/chat/completions', json: params)
     rescue HTTP::Error => e
       if retries_left > 0
         puts "retrying ..."
@@ -68,11 +65,11 @@ module Luogu::OpenAI
 
   def find_final_answer(content)
     if content.is_a?(Hash) && content['action'] == 'Final Answer'
-      content['action_input']
+      content
     elsif content.is_a?(Array)
       result = content.find { |element| element["action"] == "Final Answer" }
       if result
-        result["action_input"]
+        result
       else
         nil
       end
@@ -81,7 +78,33 @@ module Luogu::OpenAI
     end
   end
 
-  class << self
+  class StreamRequest
+    attr_accessor :client
+
+    def initialize client
+      @client = client
+    end
+
+    def chat(parameters: nil, params: nil, retries: nil)
+      params ||= parameters
+      retries_left = retries || Luogu::Application.config.openai.retries
+      begin
+        resp = client.post('/v1/chat/completions', json: params)
+        plugins_exec(resp)
+        return resp
+      rescue HTTP::Error => e
+        if retries_left > 0
+          puts "retrying ..."
+          retries_left -= 1
+          sleep(1)
+          retry
+        else
+          puts "Connection error #{e}"
+          return nil
+        end
+      end
+    end
+
     def add_plugin(&block)
       @plugins = [] if @plugins.nil?
       if block.present?
@@ -89,37 +112,31 @@ module Luogu::OpenAI
       end
     end
 
-    def plugins_exec(is_stream, resp)
+    def plugins_exec(resp)
       return if @plugins.nil?
-      if is_stream
-        response_body = ""
-        tmp_response_chunk = ""
-        while (chunk = resp.readpartial)
-          tmp_response_chunk += chunk
-          parse_result = parse_chunk(tmp_response_chunk)
-          events = parse_result[0]
-          tmp_response_chunk = parse_result[1]
-          events.each do |resp_data|
-            resp_type = 'receive'
-            delta = ''
-            if resp_data.match?(/^\[DONE\]/)
-              resp_type = 'done'
-            else
-              data = JSON.parse(resp_data)
-              delta = data.dig('choices', 0, 'delta', 'content') || ''
-              response_body += delta
-            end
-            @plugins.each do |plugin|
-              plugin.call(resp_type, delta)
-            end
+      response_body = ""
+      tmp_response_chunk = ""
+      while (chunk = resp.readpartial)
+        tmp_response_chunk += chunk
+        parse_result = parse_chunk(tmp_response_chunk)
+        events = parse_result[0]
+        tmp_response_chunk = parse_result[1]
+        events.each do |resp_data|
+          resp_type = 'receive'
+          delta = ''
+          if resp_data.match?(/^\[DONE\]/)
+            resp_type = 'done'
+          else
+            data = JSON.parse(resp_data)
+            delta = data.dig('choices', 0, 'delta', 'content') || ''
+            response_body += delta
+          end
+          @plugins.each do |plugin|
+            plugin.call(resp_type, delta)
           end
         end
-        resp.body.send(:eval, "@contents = response_body")
-      else
-        @plugins.each do |plugin|
-          plugin.call('done', resp.body)
-        end
       end
+      resp.body.send(:eval, "@contents = response_body")
     end
 
     def parse_chunk(tmp_response_chunk)
