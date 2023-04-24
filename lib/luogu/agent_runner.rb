@@ -89,7 +89,9 @@ module Luogu
         logger.info "unformat answer: #{content}"
       end
       rescue JSON::ParserError => e
-        logger.info "agent format json error: #{content}"
+        response_content = OpenAI.get_content(response)
+        logger.info "agent format json error: #{response_content}"
+        @final_answer_params['action_input'] = response_content
     end
 
     def find_and_save_final_answer(content)
