@@ -18,6 +18,7 @@ module Luogu::OpenAI
     begin
       resp = client.post('/v1/chat/completions', json: params)
       plugins_exec(params[:stream], resp)
+      puts resp.body.to_s
       return resp
     rescue HTTP::Error => e
       if retries_left > 0
@@ -58,7 +59,11 @@ module Luogu::OpenAI
   end
 
   def get_content(response)
-    response.parse.dig("choices", 0, "message", "content")
+    if response.body.instance_eval("@streaming")
+      response.body.to_s
+    else
+      response.parse.dig("choices", 0, "message", "content")
+    end
   end
 
   def find_final_answer(content)
@@ -78,13 +83,16 @@ module Luogu::OpenAI
 
   class << self
     def add_plugin(&block)
+      @plugins = [] if @plugins.nil?
       if block.present?
         @plugins << block
       end
     end
 
     def plugins_exec(is_stream, resp)
+      return if @plugins.nil?
       if is_stream
+        response_body = ""
         tmp_response_chunk = ""
         while (chunk = resp.readpartial)
           tmp_response_chunk += chunk
@@ -99,12 +107,14 @@ module Luogu::OpenAI
             else
               data = JSON.parse(resp_data)
               delta = data.dig('choices', 0, 'delta', 'content') || ''
+              response_body += delta
             end
             @plugins.each do |plugin|
               plugin.call(resp_type, delta)
             end
           end
         end
+        resp.body.send(:eval, "@contents = response_body")
       else
         @plugins.each do |plugin|
           plugin.call('done', resp.body)

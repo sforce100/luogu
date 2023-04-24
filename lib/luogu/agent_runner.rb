@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 module Luogu
-  class AgentRunner 
+  class AgentRunner < Base
     setting :model, default: Application.config.run_agent_model
     setting :global_agent, default: Application.config.run_agent_global
 
@@ -28,12 +28,15 @@ module Luogu
     end
 
     attr_reader :request_params, :agents, :histories
-    def initialize()
+    attr_accessor :is_tool_response, :last_user_input, :global_params
+    def initialize(options={})
       @request_params = provider.parameter_model.call
+      @request_params.stream = options[:stream].nil? ? false : options[:stream]
       @histories = HistoryQueue.new provider.history_limit
       @last_user_input = ''
       @agents = []
       @tools_response = []
+      @is_tool_response = false
     end
 
     def provider
@@ -51,7 +54,8 @@ module Luogu
     end
 
     def run(text, &block)
-      OpenAI.add_plugin(&block) if block.present?
+      @is_tool_response = false
+      OpenAI.add_plugin(&block) if block_given?
       @last_user_input = text
       messages = create_messages(
         [{role: "user", content: templates.user.result(binding)}]
@@ -108,10 +112,10 @@ module Luogu
       agents.each do |agent|
         agent_class = Module.const_get(agent['action'])
         logger.info "#{run_agent_retries} running #{agent_class} input: #{agent['action_input']}"
-        response = agent_class.new.call(agent['action_input'])
+        response = agent_class.new.call(self, agent['action_input'])
         @tools_response << {name: agent['action'], response: response}
       end
-      if model == AgentModel::SIMPLE
+      if config.model == AgentModel::SIMPLE
         simple_runner(response)
       else
         messages = _messages_ + [
@@ -124,11 +128,11 @@ module Luogu
 
     def simple_runner(response)
       if response.nil? && !global_agent.nil?
-        response = global_agent.new.call(@last_user_input)
+        response = global_agent.new.call(self, @last_user_input)
       end
       
-      logger.info "final answer: #{response}"
-      return find_and_save_final_answer({action: 'Final Answer', action_input: response})  
+      logger.info "simple final answer: #{response}"
+      return find_and_save_final_answer({'action' => 'Final Answer', 'action_input' => response})  
     end
   end
 end

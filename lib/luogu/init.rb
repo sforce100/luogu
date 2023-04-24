@@ -13,6 +13,8 @@ require 'securerandom'
 require "dry/cli"
 require 'dry-configurable'
 
+require_relative 'agent_model'
+
 require_relative 'base'
 require_relative 'error'
 require_relative 'application'
