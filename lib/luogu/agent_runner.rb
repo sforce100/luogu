@@ -75,8 +75,8 @@ module Luogu
       @request_params.messages = messages
       response = openai_client.present? ? openai_client.chat(params: @request_params.to_h) : provider.request.call(@request_params.to_h)
       unless response.code == 200
-        logger.error response.body.to_s
-        raise RequestError
+        logger.error "openai request error: #{response.body.to_s}"
+        raise RequestError, response
       end
       content = provider.parse.call(response)
       logger.debug content
