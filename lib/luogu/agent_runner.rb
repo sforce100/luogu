@@ -131,8 +131,8 @@ module Luogu
     end
 
     def simple_runner(response)
-      if response.nil? && !global_agent.nil?
-        response = global_agent.new.call(self, @last_user_input)
+      if response.nil? && !config.global_agent.nil?
+        response = config.global_agent.new.call(self, @last_user_input)
       end
       
       logger.info "simple final answer: #{response}"
