@@ -91,6 +91,9 @@ module Luogu
       rescue JSON::ParserError => e
         response_content = OpenAI.get_content(response)
         logger.info "agent format json error: #{response_content}"
+        if response_content.nil? || response_content == ""
+          raise e
+        end
         @final_answer_params = {'action_input' => response_content}
     end
 
