@@ -98,7 +98,7 @@ module Luogu::OpenAI
   end
 
   class StreamRequest
-    attr_accessor :client
+    attr_accessor :client, :path
 
     def initialize client
       @client = client
@@ -108,7 +108,7 @@ module Luogu::OpenAI
       params ||= parameters
       retries_left = retries || Luogu::Application.config.openai.retries
       begin
-        resp = client.post('/v1/chat/completions', json: params)
+        resp = client.post(path || '/v1/chat/completions', json: params)
         plugins_exec(resp)
         raise HTTP::Error unless resp.code == 200
         return resp
