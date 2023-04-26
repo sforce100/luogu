@@ -110,7 +110,9 @@ module Luogu::OpenAI
       begin
         resp = client.post(path || '/v1/chat/completions', json: params)
         plugins_exec(resp)
-        raise HTTP::Error unless resp.code == 200
+        if resp.code != 200 || (resp.body.to_s.nil? || resp.body.to_s == "" || resp.body.to_s.match?(/server_error/))
+          raise HTTP::Error
+        end
         return resp
       rescue HTTP::Error => e
         if retries_left > 0
