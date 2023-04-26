@@ -94,7 +94,7 @@ module Luogu
         if response_content.nil? || response_content == ""
           raise e
         end
-        @final_answer_params = {'action_input' => response_content}
+        @final_answer_params = {'action_input' => response_content, 'is_text' => true}
     end
 
     def find_and_save_final_answer(content)
