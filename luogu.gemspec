@@ -37,7 +37,8 @@ Gem::Specification.new do |spec|
   spec.add_dependency 'dry-cli', '~> 1.0'
   spec.add_dependency 'http', '~> 5.1', '>= 5.1.1'
   spec.add_dependency 'dry-configurable', '~> 1.0', '>= 1.0.1'
-
+  spec.add_dependency 'faraday', "~> 2.7"
+  
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html
 end
