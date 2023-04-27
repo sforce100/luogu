@@ -105,14 +105,18 @@ module Luogu::OpenAI
       params ||= parameters
       retries_left = retries || Luogu::Application.config.openai.retries
       begin
-        response_body = send_resquest_stream(params)
-        if response_body.blank? || response_body.match?(/server_error/)
+        @response_body = send_resquest_stream(params)
+        if @response_body.blank? || @response_body.match?(/server_error/)
           raise '网络异常'
         end
-        response_body
+        @response_body
       rescue => e
+        if e.message.match?(/end of file reached/i) && @response_body.present?
+          puts "agent chat end of file reached  ... #{e}"
+          return @response_body
+        end
         if retries_left > 0
-          puts "agent retrying ... #{e} #{e.class} #{e.messages} #{response_body}"
+          puts "agent retrying ... #{e}"
           retries_left -= 1
           sleep(1)
           retry
