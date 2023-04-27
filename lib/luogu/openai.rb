@@ -106,14 +106,13 @@ module Luogu::OpenAI
       retries_left = retries || Luogu::Application.config.openai.retries
       begin
         response_body = send_resquest_stream(params)
-        # debugger
         if response_body.blank? || response_body.match?(/server_error/)
           raise '网络异常'
         end
         response_body
       rescue => e
         if retries_left > 0
-          puts "agent retrying ..."
+          puts "agent retrying ... #{e} #{e.class} #{e.messages} #{response_body}"
           retries_left -= 1
           sleep(1)
           retry
@@ -145,7 +144,7 @@ module Luogu::OpenAI
               @response_body += delta
             end
             @plugins.each do |plugin|
-              plugin.call(self, resp_type, delta)
+              plugin.call(resp_type, delta)
             end
           end
         end
