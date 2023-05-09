@@ -171,11 +171,16 @@ module Luogu::OpenAI
     end
 
     def parse_chunk(tmp_response_chunk)
-      return [[], tmp_response_chunk] unless tmp_response_chunk.end_with?("\n\n")
+      return [[], tmp_response_chunk] if !tmp_response_chunk.end_with?("\n\n") && !tmp_response_chunk.end_with?("[DONE]\n")
 
       parse_data = tmp_response_chunk.split("\n\n")
-      events = parse_data.map { |t| t.gsub(/^data: /, '') }
-      [events, '']
+      if parse_data[-1].match?(/(}|\[DONE\]\n)$/)
+        events = parse_data.map { |t| t.gsub(/^data: /, '') }
+        [events, '']
+      else
+        events = parse_data[0..-2].map { |t| t.gsub(/^data: /, '') }
+        [events, parse_data[-1]]
+      end
     end
   end
 
