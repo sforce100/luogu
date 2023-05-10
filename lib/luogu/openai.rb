@@ -75,11 +75,7 @@ module Luogu::OpenAI
   end
 
   def get_content(response)
-    if response.body.instance_eval("@streaming")
-      response.body.to_s
-    else
-      response.parse.dig("choices", 0, "message", "content")
-    end
+    response
   end
 
   def find_final_answer(content)
@@ -98,34 +94,74 @@ module Luogu::OpenAI
   end
 
   class StreamRequest
-    attr_accessor :client, :path
+    attr_accessor :client, :path, :response_body
 
     def initialize client
       @client = client
+      @response_body = ""
     end
 
     def chat(parameters: nil, params: nil, retries: nil)
       params ||= parameters
       retries_left = retries || Luogu::Application.config.openai.retries
       begin
-        resp = client.post(path || '/v1/chat/completions', json: params)
-        plugins_exec(resp)
-        if resp.code != 200 || (resp.body.to_s.nil? || resp.body.to_s == "" || resp.body.to_s.match?(/server_error/))
-          raise HTTP::Error
+        @response_body = send_resquest_stream(params)
+        if @response_body.blank? || @response_body.match?(/server_error/)
+          raise '网络异常'
         end
-        return resp
-      rescue HTTP::Error => e
+        @response_body
+      rescue => e
+        if e.message.match?(/end of file reached/i) && @response_body.present?
+          puts "agent chat end of file reached  ... #{e}"
+          return @response_body
+        end
         if retries_left > 0
-          puts "retrying ..."
+          puts "agent retrying ... #{e}"
           retries_left -= 1
           sleep(1)
           retry
         else
-          puts "Connection error #{e}"
+          puts "agent Connection error #{e}"
           return nil
         end
       end
     end
+
+    def send_resquest_stream(payload)            
+      response = client.post(path || '/v1/chat/completions') do |req|
+        req.body = payload.to_json
+  
+        tmp_response_chunk = ""
+        req.options.on_data = Proc.new do |chunk, overall_received_bytes, env|
+          tmp_response_chunk += chunk
+          parse_result = parse_chunk(tmp_response_chunk)
+          events = parse_result[0]
+          tmp_response_chunk = parse_result[1]
+          events.each do |resp_data|
+            resp_type = 'receive'
+            delta = ''
+            if resp_data.match?(/^\[DONE\]/)
+              resp_type = 'done'
+            else
+              data = JSON.parse(resp_data)
+              delta = data.dig('choices', 0, 'delta', 'content') || ''
+              @response_body += delta
+            end
+            @plugins.each do |plugin|
+              plugin.call(self, resp_type, delta)
+            end
+          end
+        end
+      end
+      
+      puts("agent response: #{@response_body}")
+      
+      if response.status == 200
+        @response_body
+      else
+        ""
+      end
+    end    
 
     def add_plugin(&block)
       @plugins = [] if @plugins.nil?
@@ -134,39 +170,17 @@ module Luogu::OpenAI
       end
     end
 
-    def plugins_exec(resp)
-      return if @plugins.nil?
-      response_body = ""
-      tmp_response_chunk = ""
-      while (chunk = resp.readpartial)
-        tmp_response_chunk += chunk
-        parse_result = parse_chunk(tmp_response_chunk)
-        events = parse_result[0]
-        tmp_response_chunk = parse_result[1]
-        events.each do |resp_data|
-          resp_type = 'receive'
-          delta = ''
-          if resp_data.match?(/^\[DONE\]/)
-            resp_type = 'done'
-          else
-            data = JSON.parse(resp_data)
-            delta = data.dig('choices', 0, 'delta', 'content') || ''
-            response_body += delta
-          end
-          @plugins.each do |plugin|
-            plugin.call(resp_type, delta)
-          end
-        end
-      end
-      resp.body.send(:eval, "@contents = response_body")
-    end
-
     def parse_chunk(tmp_response_chunk)
-      return [[], tmp_response_chunk] unless tmp_response_chunk.end_with?("\n\n")
+      return [[], tmp_response_chunk] if !tmp_response_chunk.end_with?("\n\n") && !tmp_response_chunk.end_with?("[DONE]\n")
 
       parse_data = tmp_response_chunk.split("\n\n")
-      events = parse_data.map { |t| t.gsub(/^data: /, '') }
-      [events, '']
+      if parse_data[-1].match?(/(}|\[DONE\]\n)$/)
+        events = parse_data.map { |t| t.gsub(/^data: /, '') }
+        [events, '']
+      else
+        events = parse_data[0..-2].map { |t| t.gsub(/^data: /, '') }
+        [events, parse_data[-1]]
+      end
     end
   end
 

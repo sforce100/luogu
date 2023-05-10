@@ -17,7 +17,7 @@ module Luogu
       setting :parameter_model, default: ->() {
         OpenAI::ChatRequestParams.new(
           model: 'gpt-3.5-turbo',
-          stop: %W[\nObservation: \n\tObservation:],
+          # stop: %W[\nObservation: \n\tObservation:],
           temperature: 0
         )
       }
@@ -73,12 +73,12 @@ module Luogu
     def request(messages, run_agent_retries: 0)
       logger.debug "request chat: #{messages}"
       @request_params.messages = messages
-      response = openai_client.present? ? openai_client.chat(params: @request_params.to_h) : provider.request.call(@request_params.to_h)
-      unless response.code == 200
-        logger.error "openai request error: #{response.body.to_s}"
-        raise RequestError, response
+      response_body = openai_client.chat(params: @request_params.to_h)
+      if response_body.blank?
+        logger.error "agent openai request error"
+        raise RequestError, "网络超时"
       end
-      content = provider.parse.call(response)
+      content = provider.parse.call(response_body)
       logger.debug content
       if (answer = self.find_and_save_final_answer(content))
         logger.info "final answer: #{answer}"
@@ -89,7 +89,7 @@ module Luogu
         logger.info "unformat answer: #{content}"
       end
       rescue JSON::ParserError => e
-        response_content = OpenAI.get_content(response)
+        response_content = OpenAI.get_content(response_body)
         logger.info "agent format json error: #{response_content}"
         if response_content.nil? || response_content == ""
           raise e
