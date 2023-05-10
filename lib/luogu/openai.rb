@@ -94,7 +94,7 @@ module Luogu::OpenAI
   end
 
   class StreamRequest
-    attr_accessor :client, :path
+    attr_accessor :client, :path, :response_body
 
     def initialize client
       @client = client
@@ -148,7 +148,7 @@ module Luogu::OpenAI
               @response_body += delta
             end
             @plugins.each do |plugin|
-              plugin.call(resp_type, delta)
+              plugin.call(self, resp_type, delta)
             end
           end
         end
